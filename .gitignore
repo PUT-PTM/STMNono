@@ -30,3 +30,11 @@
 
 # Debug files
 *.dSYM/
+
+#Coocox files
+*.rej
+*.bin
+*.map
+*.xml
+*.coproj
+*.pbxproj
