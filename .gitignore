@@ -38,3 +38,5 @@
 *.xml
 *.coproj
 *.pbxproj
+*.comarker
+*.cogui

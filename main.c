@@ -3,7 +3,7 @@
 #include "stm32f4xx_gpio.h"
 #include "stm32f4xx_tim.h"
 
-void TM_PINS_Init(void)
+void TM_KANAL_Init(int kanal)
 {
 	/*
 	 *
@@ -20,16 +20,28 @@ void TM_PINS_Init(void)
 
      RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
 
-     /* USTAWIENIE PINOW JAKO WYJSC ANALOGOWYCH DLA PWM */
+     /* USTAWIENIE PINU JAKO WYJSCIA ANALOGOWEGO DLA PWM */
 
-     GPIO_PinAFConfig(GPIOB, GPIO_PinSource6, GPIO_AF_TIM4);
-     GPIO_PinAFConfig(GPIOB, GPIO_PinSource7, GPIO_AF_TIM4);
-     GPIO_PinAFConfig(GPIOB, GPIO_PinSource8, GPIO_AF_TIM4);
-     GPIO_PinAFConfig(GPIOB, GPIO_PinSource9, GPIO_AF_TIM4);
+     switch(kanal)
+     {
+      case 1: GPIO_PinAFConfig(GPIOB, GPIO_PinSource6, GPIO_AF_TIM4); break;
+      case 2: GPIO_PinAFConfig(GPIOB, GPIO_PinSource7, GPIO_AF_TIM4); break;
+      case 3: GPIO_PinAFConfig(GPIOB, GPIO_PinSource8, GPIO_AF_TIM4); break;
+      case 4: GPIO_PinAFConfig(GPIOB, GPIO_PinSource9, GPIO_AF_TIM4); break;
+      default:break;
+     }
 
-     /* USTAWIENIE PINOW */
+     /* USTAWIENIE PINU */
 
-     GPIO_InitStruct.GPIO_Pin = GPIO_Pin_6|GPIO_Pin_7|GPIO_Pin_8|GPIO_Pin_9;
+     switch(kanal)
+	 {
+	  case 1: GPIO_InitStruct.GPIO_Pin = GPIO_Pin_6; break;
+	  case 2: GPIO_InitStruct.GPIO_Pin = GPIO_Pin_7; break;
+	  case 3: GPIO_InitStruct.GPIO_Pin = GPIO_Pin_8; break;
+	  case 4: GPIO_InitStruct.GPIO_Pin = GPIO_Pin_9; break;
+	  default:break;
+	 }
+
      GPIO_InitStruct.GPIO_OType = GPIO_OType_PP;
      GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_NOPULL;
      GPIO_InitStruct.GPIO_Mode = GPIO_Mode_AF;
@@ -48,7 +60,7 @@ void TM_TIMER_Init(void)
 
     TIM_BaseStruct.TIM_Prescaler = 0;
     TIM_BaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_BaseStruct.TIM_Period = 8399; /* 10kHz PWM */
+    TIM_BaseStruct.TIM_Period = 1049; /* 80kHz PWM 1049 PERIOD */
     TIM_BaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
     TIM_BaseStruct.TIM_RepetitionCounter = 0;
 
@@ -58,8 +70,11 @@ void TM_TIMER_Init(void)
 
     TIM_Cmd(TIM4, ENABLE);
 }
-void TM_PWM_Init(float value)
+void TM_PWM_Set(int kanal, float value)
 {
+	/* PRZELICZNIK PROPORCJONALNY DLA ZAKRESU PRACY SILNIKÓW */
+	value = 3.30 + (value*0.08);
+
     TIM_OCInitTypeDef TIM_OCStruct;
 
     /* OGÓLNE USTAWIENIA */
@@ -68,39 +83,110 @@ void TM_PWM_Init(float value)
     TIM_OCStruct.TIM_OutputState = TIM_OutputState_Enable;
     TIM_OCStruct.TIM_OCPolarity = TIM_OCPolarity_Low;
 
-    /* USTAWIENIA WYPE£NIENIA KANA£ÓW TIMERA */
+    TIM_OCStruct.TIM_Pulse = (8400 * value)/100 - 1; // value% CYKLU PRACY KANA£U
 
-    /*
-    TIM_OCStruct.TIM_Pulse = 2099; // 25% CYKLU PRACY CH1 (PB6)
-    TIM_OC1Init(TIM4, &TIM_OCStruct);
-    TIM_OC1PreloadConfig(TIM4, TIM_OCPreload_Enable);
+    /* USTAWIENIA WYPE£NIENIA KANA£U TIMERA */
 
-    TIM_OCStruct.TIM_Pulse = 4199; // 50% CYKLU PRACY CH2 (PB7)
-    TIM_OC2Init(TIM4, &TIM_OCStruct);
-    TIM_OC2PreloadConfig(TIM4, TIM_OCPreload_Enable);
-
-    TIM_OCStruct.TIM_Pulse = 6299; // 75% CYKLU PRACY CH3 (PB8)
-    TIM_OC3Init(TIM4, &TIM_OCStruct);
-    TIM_OC3PreloadConfig(TIM4, TIM_OCPreload_Enable);
-
-    TIM_OCStruct.TIM_Pulse = 8399; // 100% CYKLU PRACY CH4 (PB9)
-    TIM_OC4Init(TIM4, &TIM_OCStruct);
-    TIM_OC4PreloadConfig(TIM4, TIM_OCPreload_Enable);
-    */
-
-    TIM_OCStruct.TIM_Pulse = (8400 * value)/100 - 1; // value% CYKLU PRACY CH1 (PB6)
-	TIM_OC1Init(TIM4, &TIM_OCStruct);
-	TIM_OC1PreloadConfig(TIM4, TIM_OCPreload_Enable);
+    switch(kanal)
+    {
+    case 1:
+    	TIM_OC1Init(TIM4, &TIM_OCStruct);
+    	TIM_OC1PreloadConfig(TIM4, TIM_OCPreload_Enable);
+    	break;
+    case 2:
+    	TIM_OC2Init(TIM4, &TIM_OCStruct);
+    	TIM_OC2PreloadConfig(TIM4, TIM_OCPreload_Enable);
+    	break;
+    case 3:
+    	TIM_OC3Init(TIM4, &TIM_OCStruct);
+    	TIM_OC3PreloadConfig(TIM4, TIM_OCPreload_Enable);
+    	break;
+    case 4:
+    	TIM_OC4Init(TIM4, &TIM_OCStruct);
+    	TIM_OC4PreloadConfig(TIM4, TIM_OCPreload_Enable);
+    	break;
+    default:
+    	break;
+    }
 }
+void TM_KANAL_Ground(int kanal)
+{
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
 
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	switch(kanal)
+	{
+	 case 1: GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6; break;
+	 case 2: GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7; break;
+	 case 3: GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8; break;
+	 case 4: GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9; break;
+	 default:break;
+	}
+
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	switch(kanal)
+	{
+	 case 1: GPIO_ResetBits(GPIOB, GPIO_Pin_6); break;
+	 case 2: GPIO_ResetBits(GPIOB, GPIO_Pin_7); break;
+	 case 3: GPIO_ResetBits(GPIOB, GPIO_Pin_8); break;
+	 case 4: GPIO_ResetBits(GPIOB, GPIO_Pin_9); break;
+	 default:break;
+	}
+}
 
 int main(void)
 {
-	SystemInit();
+	/*
+	 *
+	 *
+	 * KANAL 1 - PB6 ( KOLO 1 - NAJPIERW SYGNAL PWM, POZNIEJ MASA )
+	 * KANAL 2 - PB7 ( KOLO 2 - NAJPIERW SYGNAL PWM, POZNIEJ MASA )
+	 * KANAL 3 - PB8 ( KOLO 1 - NAJPIERW MASA, POZNIEJ SYGNAL PWM )
+	 * KANAL 4 - PB9 ( KOLO 2 - NAJPIERW MASA, POZNIEJ SYGNAL PWM )
+	 *
+	 * GDY CHCEMY ROZKRECIC KOLA W DANYM KIERUNKU:
+	 * 		PIERW PODLACZAMY DO MASY PIN SILNIKA NA KTORY NIE POWEDRUJE PWM
+	 * 		NASTEPNIE KONFIGURUJEMY PIN SILNIKA NA KTORY POJDZIE SYGNAL PWM
+	 * 		OSTATECZNIE USTAWIAMY WARTOSC PROCENTOWA WYPELNIENIA KANALU DLA PWM
+	 *
+	 */
 
-	TM_PINS_Init();
-	TM_TIMER_Init();
-	TM_PWM_Init(60);
+	SystemInit();
+	TM_TIMER_Init(); // <-- URUCHOMIENIE TIMERA DLA PWM
+
+	/*POD£¥CZENIE DO MASY KANA£ÓW TIMERA SYGNA£ÓW STERUJ¥CYCH KIERUNKIEM OBROTU JEDNEGO I DRUGIEGO KO£A */
+	TM_KANAL_Ground(3);
+	TM_KANAL_Ground(4);
+
+	/*KONFIGURUJEMY KANA£ 1 I 2 DLA MO¯LIWOCI WYPROWADZANIA SYGNA£U AF - PWM*/
+	TM_KANAL_Init(1);
+	TM_KANAL_Init(2);
+
+	/*NA KANA£Y 1 I 2 PUSZCZAMY SYGNA£ PWM W SKALI 0-100*/
+	TM_PWM_Set(1,100);
+	TM_PWM_Set(2,100);
+
+	/*PRZED ZMIAN¥ KIERUNKU OBROTU KÓ£ ODCZEKUJEMY JAKIS CZAS*/
+	int i = 0;
+	for(;i < 50000000; i++) {}
+
+	/*KANALY 1 I 2 NA KTORE DO TEJ PORY SKONFIGUROWANY BYL PWM PODLACZAMY DO MASY*/
+	TM_KANAL_Ground(1);
+	TM_KANAL_Ground(2);
+
+	/*KONFIGURUJEMY KANA£ 3 I 4 DLA MO¯LIWOCI WYPROWADZANIA SYGNA£U AF - PWM*/
+	TM_KANAL_Init(3);
+	TM_KANAL_Init(4);
+
+	/*NA KANA£Y 3 I 4 PUSZCZAMY SYGNA£ PWM W SKALI 0-100*/
+	TM_PWM_Set(3,100);
+	TM_PWM_Set(4,100);
 
 	while(1)
 	{
