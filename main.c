@@ -2,7 +2,9 @@
 #include "stm32f4xx_rcc.h"
 #include "stm32f4xx_gpio.h"
 #include "stm32f4xx_tim.h"
+#include "stm32f4xx_usart.h"
 
+/* STEROWANIE SILNIKAMI */
 void TM_KANAL_Init(int kanal)
 {
 	/*
@@ -58,9 +60,9 @@ void TM_TIMER_Init(void)
 
     /* WYPE£NIENIE STRUKTURY INICJALIZACYJNEJ TIMERA 4 */
 
-    TIM_BaseStruct.TIM_Prescaler = 0;
+    TIM_BaseStruct.TIM_Prescaler = (84000000/100000)-1;
     TIM_BaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_BaseStruct.TIM_Period = 1049; /* 80kHz PWM 1049 PERIOD */
+    TIM_BaseStruct.TIM_Period = (100000/1000)-1; /* 80kHz PWM 1049 PERIOD */
     TIM_BaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
     TIM_BaseStruct.TIM_RepetitionCounter = 0;
 
@@ -73,7 +75,7 @@ void TM_TIMER_Init(void)
 void TM_PWM_Set(int kanal, float value)
 {
 	/* PRZELICZNIK PROPORCJONALNY DLA ZAKRESU PRACY SILNIKÓW */
-	value = 3.30 + (value*0.08);
+	//value = 3.30 + (value*0.08);
 
     TIM_OCInitTypeDef TIM_OCStruct;
 
@@ -140,10 +142,63 @@ void TM_KANAL_Ground(int kanal)
 	}
 }
 
+/* OBS£UGA BLUETOOTH */
+void USRT_Init()
+{
+	// WLACZENIE TAKTOWANIA WYBRANEGO PORTU
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
+
+	// WLACZENIE TAKTOWANIA WYBRANEGO UKLADU USART
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART3, ENABLE);
+
+	// KONFIGURACJA LINII TX
+	GPIO_PinAFConfig(GPIOC, GPIO_PinSource10, GPIO_AF_USART3);
+
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+	// KONFIGURACJA LINII RX
+	GPIO_PinAFConfig(GPIOC, GPIO_PinSource11, GPIO_AF_USART3);
+
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_11;
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+	// KONFIGURACJA USART
+	USART_InitTypeDef USART_InitStructure;
+
+	USART_InitStructure.USART_BaudRate = 9600;
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;
+	USART_InitStructure.USART_Parity = USART_Parity_No;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+
+	USART_Init(USART3, &USART_InitStructure);
+
+	// WLACZENIE UKLADU USART
+	USART_Cmd(USART3, ENABLE);
+}
+uint8_t usartGetChar(void)
+{
+	while (USART_GetFlagStatus(USART3, USART_FLAG_RXNE) == RESET);
+	return USART_ReceiveData(USART3);
+}
+
 int main(void)
 {
+	SystemInit();
+	TM_TIMER_Init();
+	USRT_Init();
+
 	/*
-	 *
+	 * [STEROWANIE SILNIKAMI]
 	 *
 	 * KANAL 1 - PB6 ( KOLO 1 - NAJPIERW SYGNAL PWM, POZNIEJ MASA )
 	 * KANAL 2 - PB7 ( KOLO 2 - NAJPIERW SYGNAL PWM, POZNIEJ MASA )
@@ -155,41 +210,33 @@ int main(void)
 	 * 		NASTEPNIE KONFIGURUJEMY PIN SILNIKA NA KTORY POJDZIE SYGNAL PWM
 	 * 		OSTATECZNIE USTAWIAMY WARTOSC PROCENTOWA WYPELNIENIA KANALU DLA PWM
 	 *
+	 * [OBS£UGA BLUETOOTH]
+	 *
+	 * STM USART3 TX PC10 - POD£¥CZONE DO RX HC-05
+	 * STM USART3 RX PC11 - POD£¥CZONE DO TX HC-05
+	 *
 	 */
 
-	SystemInit();
-	TM_TIMER_Init(); // <-- URUCHOMIENIE TIMERA DLA PWM
+	 /*POD£¼CZENIE DO MASY KANA£ÓW TIMERA SYGNA£ÓW STERUJ¼CYCH KIERUNKIEM OBROTU JEDNEGO I DRUGIEGO KO£A */
+	 TM_KANAL_Ground(3);
+	 TM_KANAL_Ground(4);
 
-	/*POD£¥CZENIE DO MASY KANA£ÓW TIMERA SYGNA£ÓW STERUJ¥CYCH KIERUNKIEM OBROTU JEDNEGO I DRUGIEGO KO£A */
-	TM_KANAL_Ground(3);
-	TM_KANAL_Ground(4);
-
-	/*KONFIGURUJEMY KANA£ 1 I 2 DLA MO¯LIWOCI WYPROWADZANIA SYGNA£U AF - PWM*/
-	TM_KANAL_Init(1);
-	TM_KANAL_Init(2);
-
-	/*NA KANA£Y 1 I 2 PUSZCZAMY SYGNA£ PWM W SKALI 0-100*/
-	TM_PWM_Set(1,100);
-	TM_PWM_Set(2,100);
-
-	/*PRZED ZMIAN¥ KIERUNKU OBROTU KÓ£ ODCZEKUJEMY JAKIS CZAS*/
-	int i = 0;
-	for(;i < 50000000; i++) {}
-
-	/*KANALY 1 I 2 NA KTORE DO TEJ PORY SKONFIGUROWANY BYL PWM PODLACZAMY DO MASY*/
-	TM_KANAL_Ground(1);
-	TM_KANAL_Ground(2);
-
-	/*KONFIGURUJEMY KANA£ 3 I 4 DLA MO¯LIWOCI WYPROWADZANIA SYGNA£U AF - PWM*/
-	TM_KANAL_Init(3);
-	TM_KANAL_Init(4);
-
-	/*NA KANA£Y 3 I 4 PUSZCZAMY SYGNA£ PWM W SKALI 0-100*/
-	TM_PWM_Set(3,100);
-	TM_PWM_Set(4,100);
+	 /*KONFIGURUJEMY KANA£ 1 I 2 DLA MO¯LIWOCI WYPROWADZANIA SYGNA£U AF - PWM*/
+	 TM_KANAL_Init(1);
+	 TM_KANAL_Init(2);
 
 	while(1)
 	{
+		char znak = usartGetChar();
+		if(znak == 'I')
+		{
+			TM_PWM_Set(1,100);
+			TM_PWM_Set(2,100);
+		}
+		else if(znak == 'O')
+		{
+			TM_PWM_Set(1,0);
+			TM_PWM_Set(2,0);
+		}
 	}
-
 }
