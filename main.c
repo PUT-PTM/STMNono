@@ -72,10 +72,9 @@ void TM_TIMER_Init(void)
 
     TIM_Cmd(TIM4, ENABLE);
 }
-void TM_PWM_Set(int kanal, float value)
+void TM_PWM_Set(int kanal, char value)
 {
 	/* PRZELICZNIK PROPORCJONALNY DLA ZAKRESU PRACY SILNIKÓW */
-	//value = 3.30 + (value*0.08);
 
     TIM_OCInitTypeDef TIM_OCStruct;
 
@@ -85,7 +84,7 @@ void TM_PWM_Set(int kanal, float value)
     TIM_OCStruct.TIM_OutputState = TIM_OutputState_Enable;
     TIM_OCStruct.TIM_OCPolarity = TIM_OCPolarity_Low;
 
-    TIM_OCStruct.TIM_Pulse = (8400 * value)/100 - 1; // value% CYKLU PRACY KANA£U
+    TIM_OCStruct.TIM_Pulse = (8400 * (float)value/255) - 1; // value% CYKLU PRACY KANA£U
 
     /* USTAWIENIA WYPE£NIENIA KANA£U TIMERA */
 
@@ -217,26 +216,47 @@ int main(void)
 	 *
 	 */
 
-	 /*POD£¼CZENIE DO MASY KANA£ÓW TIMERA SYGNA£ÓW STERUJ¼CYCH KIERUNKIEM OBROTU JEDNEGO I DRUGIEGO KO£A */
-	 TM_KANAL_Ground(3);
-	 TM_KANAL_Ground(4);
-
-	 /*KONFIGURUJEMY KANA£ 1 I 2 DLA MO¯LIWOCI WYPROWADZANIA SYGNA£U AF - PWM*/
-	 TM_KANAL_Init(1);
-	 TM_KANAL_Init(2);
+	/*POD£¼CZENIE DO MASY KANA£ÓW TIMERA SYGNA£ÓW STERUJ¼CYCH KIERUNKIEM OBROTU JEDNEGO I DRUGIEGO KO£A */
+	TM_KANAL_Ground(1);
+	TM_KANAL_Ground(2);
+	TM_KANAL_Ground(3);
+	TM_KANAL_Ground(4);
 
 	while(1)
 	{
-		char znak = usartGetChar();
-		if(znak == 'I')
+		/*
+		 *
+		 * POBIERAMY DANE W KOLEJNOSCI:
+		 * 		PWM DLA LEWEGO SILNIKA
+		 * 		KIERUNEK OBROTU DLA LEWEGO SILNIKA
+		 * 		PWM DLA PRAWEGO SILNIKA
+		 * 		KIERUNEK OBROTU DLA PRAWEGO SILNIKA
+		 *
+		 */
+		char L_PWM = usartGetChar(), L_K = usartGetChar(), P_PWM = usartGetChar(), P_K = usartGetChar();
+
+		/* USTAWIAMY LEWY SILNIK */
+		if(L_K == 'P')
 		{
-			TM_PWM_Set(1,100);
-			TM_PWM_Set(2,100);
+			TM_KANAL_Ground(3);
+			TM_KANAL_Init(1); TM_PWM_Set(1, L_PWM);
 		}
-		else if(znak == 'O')
+		else if(L_K == 'T')
 		{
-			TM_PWM_Set(1,0);
-			TM_PWM_Set(2,0);
+			TM_KANAL_Ground(1);
+			TM_KANAL_Init(3); TM_PWM_Set(3, L_PWM);
+		}
+
+		/* USTAWIAMY PRAWY SILNIK */
+		if(P_K == 'P')
+		{
+			TM_KANAL_Ground(4);
+			TM_KANAL_Init(2); TM_PWM_Set(2, P_PWM);
+		}
+		else if(P_K == 'T')
+		{
+			TM_KANAL_Ground(2);
+			TM_KANAL_Init(4); TM_PWM_Set(4, P_PWM);
 		}
 	}
 }
