@@ -3,6 +3,10 @@
 #include "stm32f4xx_gpio.h"
 #include "stm32f4xx_tim.h"
 #include "stm32f4xx_usart.h"
+#include "stm32f4xx_exti.h"
+#include "misc.h"
+
+int usTime = 0;
 
 /* STEROWANIE SILNIKAMI */
 void TM_KANAL_Init(int kanal)
@@ -141,6 +145,59 @@ void TM_KANAL_Ground(int kanal)
 	}
 }
 
+
+/* OPOZNIENIE */
+void DELAY_Init(void)
+{
+    TIM_TimeBaseInitTypeDef TIM_BaseStruct;
+
+    /* POD£¥CZENIE ZEGARA DO TIMERA 3 */
+
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+
+    /* WYPE£NIENIE STRUKTURY INICJALIZACYJNEJ TIMERA 3 */
+
+    TIM_BaseStruct.TIM_Prescaler = 0;
+    TIM_BaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_BaseStruct.TIM_Period = 83; /* 1MHz - 1us */
+    TIM_BaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
+    TIM_BaseStruct.TIM_RepetitionCounter = 0;
+
+    TIM_TimeBaseInit(TIM3, &TIM_BaseStruct);
+
+    /* W£¥CZENIE TIMERA 3 */
+
+    TIM_Cmd(TIM3, ENABLE);
+
+    /* WLACZAMY PRZERWANIA DLA TIMERA 3 */
+
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
+
+    NVIC_InitTypeDef NVIC_InitStructure;
+    NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+
+    TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
+    TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
+}
+void TIM3_IRQHandler(void)
+{
+	if(TIM_GetITStatus(TIM3, TIM_IT_Update) != RESET)
+	{
+		++usTime;
+		TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
+	}
+}
+void delay(int us)
+{
+	usTime = 0;
+	while(usTime < us);
+}
+
+
 /* OBS£UGA BLUETOOTH */
 void USRT_Init()
 {
@@ -183,26 +240,154 @@ void USRT_Init()
 
 	// WLACZENIE UKLADU USART
 	USART_Cmd(USART3, ENABLE);
+
+	// KONFIGURACJA PRZERWAN WYWOLYWANYCH W MOMENCIE ODEBRANIA PLIKU PRZEZ BLUETOOTH
+	NVIC_InitTypeDef NVIC_InitStructure;
+	USART_ITConfig(USART3, USART_IT_RXNE, ENABLE);
+
+	NVIC_InitStructure.NVIC_IRQChannel = USART3_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+
+	NVIC_Init(&NVIC_InitStructure);
+	NVIC_EnableIRQ(USART3_IRQn);
 }
-uint8_t usartGetChar(void)
+void USART3_IRQHandler(void)
 {
-	while (USART_GetFlagStatus(USART3, USART_FLAG_RXNE) == RESET);
-	return USART_ReceiveData(USART3);
+	if (USART_GetITStatus(USART3, USART_IT_RXNE) == RESET)
+		return;
+
+	wykonaj(USART3->DR);
+	NVIC_ClearPendingIRQ(USART3_IRQn);
 }
+
+/* OBS£UGA DIOD  I PINU SYGNALU CZUJNIKA ODLEGLOSCIOWEGO PRZEDNIEGO */
+void GPIOD_Init()
+{
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
+
+	GPIO_InitTypeDef DIODY;
+	DIODY.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13| GPIO_Pin_14| GPIO_Pin_15;
+	DIODY.GPIO_Mode = GPIO_Mode_OUT;
+	DIODY.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	DIODY.GPIO_OType = GPIO_OType_PP;
+	DIODY.GPIO_Speed = GPIO_Speed_100MHz;
+	GPIO_Init(GPIOD, &DIODY);
+
+	GPIO_InitTypeDef TRIG;
+	TRIG.GPIO_Pin = GPIO_Pin_4;
+	TRIG.GPIO_Mode = GPIO_Mode_OUT;
+	TRIG.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOD, &TRIG);
+
+	GPIO_InitTypeDef ECHO;
+	ECHO.GPIO_Pin = GPIO_Pin_3;
+	ECHO.GPIO_Mode = GPIO_Mode_IN;
+	ECHO.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOD, &ECHO);
+}
+
+/* ODEBRANIE SYGNA£U STEROWANIA */
+void wykonaj(char znak)
+{
+	if(znak != 'r') wykonaj('r');
+	switch(znak)
+	{
+	case 'w':
+		GPIO_SetBits(GPIOD, GPIO_Pin_15);
+		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_13|GPIO_Pin_14);
+/*
+		int czas = 0;
+		GPIO_SetBits(GPIOD, GPIO_Pin_4); delay(10);
+		GPIO_ResetBits(GPIOD, GPIO_Pin_4);
+
+		while(GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_3) == 1) // <-- PODPIÊTE DO ECHO CZUJNIKA DAJE 1 BEZ WCZENIEJSZEGO WYS£ANIA SYGNA£U
+		{
+			delay(1);
+			GPIO_ToggleBits(GPIOD, GPIO_Pin_13); delay(1000);
+			czas++;
+		}
+		if(czas > 0)
+		{
+			float cm = (float)czas/58; czas = 0;
+			if(cm < 4)
+			{
+				...
+			}
+			break;
+		}
+*/
+		TM_KANAL_Init(2);
+		TM_KANAL_Init(4);
+
+		TM_PWM_Set(2, 255);
+		TM_PWM_Set(4, 255);
+
+		break;
+	case 's':
+		GPIO_ToggleBits(GPIOD, GPIO_Pin_13);
+		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_14|GPIO_Pin_15);
+
+		TM_KANAL_Init(1);
+		TM_KANAL_Init(3);
+
+		TM_PWM_Set(1, 255);
+		TM_PWM_Set(3, 255);
+
+		break;
+	case 'a':
+		GPIO_ToggleBits(GPIOD, GPIO_Pin_14);
+		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_13|GPIO_Pin_15);
+
+		TM_KANAL_Init(1);
+		TM_KANAL_Init(4);
+
+		TM_PWM_Set(1, 255);
+		TM_PWM_Set(4, 255);
+
+		break;
+	case 'd':
+		GPIO_ToggleBits(GPIOD, GPIO_Pin_12);
+		GPIO_ResetBits(GPIOD, GPIO_Pin_13|GPIO_Pin_14|GPIO_Pin_15);
+
+		TM_KANAL_Init(2);
+		TM_KANAL_Init(3);
+
+		TM_PWM_Set(2, 255);
+		TM_PWM_Set(3, 255);
+
+		break;
+	default:
+		TM_KANAL_Ground(1);
+		TM_KANAL_Ground(2);
+		TM_KANAL_Ground(3);
+		TM_KANAL_Ground(4);
+
+		break;
+	}
+	/////////////////////////////////////////////////////////////////////////////////////////
+}
+
+
 
 int main(void)
 {
 	SystemInit();
 	TM_TIMER_Init();
 	USRT_Init();
+	GPIOD_Init();
+	DELAY_Init();
+
+	wykonaj('r');
 
 	/*
 	 * [STEROWANIE SILNIKAMI]
 	 *
-	 * KANAL 1 - PB6 ( KOLO 1 - NAJPIERW SYGNAL PWM, POZNIEJ MASA )
-	 * KANAL 2 - PB7 ( KOLO 2 - NAJPIERW SYGNAL PWM, POZNIEJ MASA )
-	 * KANAL 3 - PB8 ( KOLO 1 - NAJPIERW MASA, POZNIEJ SYGNAL PWM )
-	 * KANAL 4 - PB9 ( KOLO 2 - NAJPIERW MASA, POZNIEJ SYGNAL PWM )
+	 * KANAL 1 - PB6 ( KOLO 1 )
+	 * KANAL 2 - PB7 ( KOLO 1 )
+	 * KANAL 3 - PB8 ( KOLO 2 )
+	 * KANAL 4 - PB9 ( KOLO 2 )
 	 *
 	 * GDY CHCEMY ROZKRECIC KOLA W DANYM KIERUNKU:
 	 * 		PIERW PODLACZAMY DO MASY PIN SILNIKA NA KTORY NIE POWEDRUJE PWM
@@ -216,47 +401,16 @@ int main(void)
 	 *
 	 */
 
-	/*POD£¼CZENIE DO MASY KANA£ÓW TIMERA SYGNA£ÓW STERUJ¼CYCH KIERUNKIEM OBROTU JEDNEGO I DRUGIEGO KO£A */
 	TM_KANAL_Ground(1);
 	TM_KANAL_Ground(2);
 	TM_KANAL_Ground(3);
 	TM_KANAL_Ground(4);
 
+
+
+
 	while(1)
 	{
-		/*
-		 *
-		 * POBIERAMY DANE W KOLEJNOSCI:
-		 * 		PWM DLA LEWEGO SILNIKA
-		 * 		KIERUNEK OBROTU DLA LEWEGO SILNIKA
-		 * 		PWM DLA PRAWEGO SILNIKA
-		 * 		KIERUNEK OBROTU DLA PRAWEGO SILNIKA
-		 *
-		 */
-		char L_PWM = usartGetChar(), L_K = usartGetChar(), P_PWM = usartGetChar(), P_K = usartGetChar();
 
-		/* USTAWIAMY LEWY SILNIK */
-		if(L_K == 'P')
-		{
-			TM_KANAL_Ground(3);
-			TM_KANAL_Init(1); TM_PWM_Set(1, L_PWM);
-		}
-		else if(L_K == 'T')
-		{
-			TM_KANAL_Ground(1);
-			TM_KANAL_Init(3); TM_PWM_Set(3, L_PWM);
-		}
-
-		/* USTAWIAMY PRAWY SILNIK */
-		if(P_K == 'P')
-		{
-			TM_KANAL_Ground(4);
-			TM_KANAL_Init(2); TM_PWM_Set(2, P_PWM);
-		}
-		else if(P_K == 'T')
-		{
-			TM_KANAL_Ground(2);
-			TM_KANAL_Init(4); TM_PWM_Set(4, P_PWM);
-		}
 	}
 }

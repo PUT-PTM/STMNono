@@ -1,11 +1,16 @@
 package com.example.matti.nonokontroler;
 
+import android.app.Fragment;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.Intent;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.TextView;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
@@ -17,7 +22,7 @@ import java.io.IOException;
 import java.util.Set;
 import java.util.UUID;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener {
+public class MainActivity extends AppCompatActivity {
 
     /* NIEZBĘDNE DLA TRANSMISJI BLUETOOTH */
 
@@ -68,7 +73,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         }
         return null;
-            // W przypadku braku dostepnosci Nono
+        // W przypadku braku dostepnosci Nono
     }
     public boolean polaczZNono(){
 
@@ -93,106 +98,57 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         return stan;
     }
 
+    public void connectBtn(View v)
+    {
+
+                if (mBluetoothAdapter != null) {
+                    // Urządzenie wspiera Bluetooth
+
+                    TextView t = (TextView)findViewById(R.id.log);
+                    if (t != null) {
+                        // Istnieje na formie kontrolka wyswietlajaca log
+
+                        if(wlaczBluetooth()){
+                            // Udało się włączyć moduł bluetooth
+
+                            Nono = znajdzNono();
+                            if(Nono != null && polaczZNono())
+                            {
+                                // Znaleziono Nono na liscie sparowanych urzadzen i udala sie proba nawiazania z nim polaczenia
+                                t.setText("Połączono się z Nono");
+                            }
+                        }
+                    }
+                }
+    }
+
+    public void controlBtn(View v)
+    {
+        Button button =(Button) v;
+        startActivity(new Intent(getApplicationContext(), Pilot.class));
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        /* OBSŁUGA AKCELEROMETRU */
-
-        SensorManager SM = (SensorManager) getSystemService(SENSOR_SERVICE);
-        Sensor mySensor = SM.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        SM.registerListener(this, mySensor, SensorManager.SENSOR_DELAY_NORMAL);
-
-        /* OBSŁUGA BLUETOOTH */
-
-        if (mBluetoothAdapter != null) {
-            // Urządzenie wspiera Bluetooth
-
-            TextView t = (TextView)findViewById(R.id.log);
-            if (t != null) {
-                // Istnieje na formie kontrolka wyswietlajaca log
-
-                if(wlaczBluetooth()){
-                    // Udało się włączyć moduł bluetooth
-
-                    t.setText("Próbuję odnaleźć Nono");
-                    Nono = znajdzNono();
-
-                    if(Nono != null && polaczZNono())
-                    {
-                        // Znaleziono Nono na liscie sparowanych urzadzen i udala sie proba nawiazania z nim polaczenia
-                        t.setText("Połączono się z Nono");
-                    }
-
-                } else t.setText("Nie udało się włączyć bluetooth");
-            }
-        }
     }
 
-    public void przeslijDaneSterowania(float LP, float GD){
+    public static class PlaceholderFragment extends Fragment {
 
-        /*
-            LP: MIN -10 MAX 10 (LEWO/PRAWO) 0 - SRODEK
-            GD: MIN -11 MAX 11 (PRZÓD/TYL) 0 - SRODEK
-         */
-
-        /* BUFOR 4 BAJTÓW DO PRZESŁANIA */
-        byte[] Tab = new byte[4];
-
-        /* PRZELICZANIE DANYCH */
-        if(GD > 0)
-        {
-            GD = (GD/11)*255;
-            Tab[1] = 'T';
-            Tab[3] = 'T';
-        }
-        else if(GD < 0)
-        {
-            GD = (-GD/11)*255;
-            Tab[1] = 'P';
-            Tab[3] = 'P';
-        }
-        if(LP > 0)
-        {
-            LP = (LP/10)*255;
-
-            Tab[0] = (byte)(LP<GD?(GD-GD*(LP/GD)):(LP-LP*(GD/LP)));
-            Tab[2] = LP<GD?(byte)GD:(byte)LP; // <-- PRAWY SILNIK BĘDZIE SZYBSZY
-        }
-        else if(LP < 0)
-        {
-            LP = (-LP/10)*255;
-
-            Tab[0] = LP<GD?(byte)GD:(byte)LP; // <-- LEWY SILNIK BĘDZIE SZYBSZY
-            Tab[2] = (byte)(LP<GD?(GD-GD*(LP/GD)):(LP-LP*(GD/LP)));
+        public PlaceholderFragment() {
         }
 
-        /* WYSYLANIE DANYCH */
-        try {
-
-            outStream.write(Tab);
-            outStream.flush();
-
-        }catch (Exception ex){
-            // ..
+        @Override
+        public View onCreateView(LayoutInflater inflater, ViewGroup container,
+                                 Bundle savedInstanceState) {
+            View rootView = inflater.inflate(R.layout.activity_main, container, false);
+            return rootView;
         }
+
+
     }
 
-    /* EVENT WYKONUJE SIĘ PRZY KAŻDEJ NAWET NAJMNIEJSZEJ ZMIANIE POŁOŻENIA TELEFONU */
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-
-        /* WSP TOLERANCJI PRZECHYŁU POWYŻTJ KTÓREGO WARTOŚCI DANE STEROWANIA ZOSTANĄ PRZESŁANE */
-        float wspToler = (float)2.0;
-
-        if(Math.abs(event.values[0])>wspToler || Math.abs(event.values[1])>wspToler)
-            przeslijDaneSterowania(event.values[0],event.values[1]);
-    }
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-        // nie używane ..
-    }
 }
