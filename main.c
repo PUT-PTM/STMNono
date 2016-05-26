@@ -1,12 +1,16 @@
-#include "stm32f4xx_conf.h"
-#include "stm32f4xx_rcc.h"
-#include "stm32f4xx_gpio.h"
 #include "stm32f4xx_tim.h"
 #include "stm32f4xx_usart.h"
-#include "stm32f4xx_exti.h"
 #include "misc.h"
 
-int usTime = 0;
+#include "stm32f4xx.h"
+#include "defines.h"
+#include "tm_stm32f4_delay.h"
+#include "tm_stm32f4_disco.h"
+#include "tm_stm32f4_hcsr04.h"
+#include <stdio.h>
+
+/* DEKLARACJA CZUJNIKOW ODLEGLOSCIOWYCH */
+TM_HCSR04_t SENSOR_W, SENSOR_S, SENSOR_A, SENSOR_D;
 
 /* STEROWANIE SILNIKAMI */
 void TM_KANAL_Init(int kanal)
@@ -145,59 +149,6 @@ void TM_KANAL_Ground(int kanal)
 	}
 }
 
-
-/* OPOZNIENIE */
-void DELAY_Init(void)
-{
-    TIM_TimeBaseInitTypeDef TIM_BaseStruct;
-
-    /* POD£¥CZENIE ZEGARA DO TIMERA 3 */
-
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
-
-    /* WYPE£NIENIE STRUKTURY INICJALIZACYJNEJ TIMERA 3 */
-
-    TIM_BaseStruct.TIM_Prescaler = 0;
-    TIM_BaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_BaseStruct.TIM_Period = 83; /* 1MHz - 1us */
-    TIM_BaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
-    TIM_BaseStruct.TIM_RepetitionCounter = 0;
-
-    TIM_TimeBaseInit(TIM3, &TIM_BaseStruct);
-
-    /* W£¥CZENIE TIMERA 3 */
-
-    TIM_Cmd(TIM3, ENABLE);
-
-    /* WLACZAMY PRZERWANIA DLA TIMERA 3 */
-
-    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
-
-    NVIC_InitTypeDef NVIC_InitStructure;
-    NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
-    TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
-}
-void TIM3_IRQHandler(void)
-{
-	if(TIM_GetITStatus(TIM3, TIM_IT_Update) != RESET)
-	{
-		++usTime;
-		TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
-	}
-}
-void delay(int us)
-{
-	usTime = 0;
-	while(usTime < us);
-}
-
-
 /* OBS£UGA BLUETOOTH */
 void USRT_Init()
 {
@@ -258,76 +209,34 @@ void USART3_IRQHandler(void)
 	if (USART_GetITStatus(USART3, USART_IT_RXNE) == RESET)
 		return;
 
-	wykonaj(USART3->DR);
+	SYGNAL(USART3->DR);
 	NVIC_ClearPendingIRQ(USART3_IRQn);
 }
 
-/* OBS£UGA DIOD  I PINU SYGNALU CZUJNIKA ODLEGLOSCIOWEGO PRZEDNIEGO */
-void GPIOD_Init()
-{
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
-
-	GPIO_InitTypeDef DIODY;
-	DIODY.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13| GPIO_Pin_14| GPIO_Pin_15;
-	DIODY.GPIO_Mode = GPIO_Mode_OUT;
-	DIODY.GPIO_PuPd = GPIO_PuPd_NOPULL;
-	DIODY.GPIO_OType = GPIO_OType_PP;
-	DIODY.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_Init(GPIOD, &DIODY);
-
-	GPIO_InitTypeDef TRIG;
-	TRIG.GPIO_Pin = GPIO_Pin_4;
-	TRIG.GPIO_Mode = GPIO_Mode_OUT;
-	TRIG.GPIO_PuPd = GPIO_PuPd_NOPULL;
-	GPIO_Init(GPIOD, &TRIG);
-
-	GPIO_InitTypeDef ECHO;
-	ECHO.GPIO_Pin = GPIO_Pin_3;
-	ECHO.GPIO_Mode = GPIO_Mode_IN;
-	ECHO.GPIO_PuPd = GPIO_PuPd_NOPULL;
-	GPIO_Init(GPIOD, &ECHO);
-}
-
 /* ODEBRANIE SYGNA£U STEROWANIA */
-void wykonaj(char znak)
+void SYGNAL(char znak)
 {
-	if(znak != 'r') wykonaj('r');
+	if(znak != 'r') SYGNAL('r');
 	switch(znak)
 	{
-	case 'w':
-		GPIO_SetBits(GPIOD, GPIO_Pin_15);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_13|GPIO_Pin_14);
-/*
-		int czas = 0;
-		GPIO_SetBits(GPIOD, GPIO_Pin_4); delay(10);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_4);
+	case 'w': TM_HCSR04_Read(&SENSOR_W);
 
-		while(GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_3) == 1) // <-- PODPIÊTE DO ECHO CZUJNIKA DAJE 1 BEZ WCZENIEJSZEGO WYS£ANIA SYGNA£U
+		if(SENSOR_W.Distance > 20)
 		{
-			delay(1);
-			GPIO_ToggleBits(GPIOD, GPIO_Pin_13); delay(1000);
-			czas++;
-		}
-		if(czas > 0)
-		{
-			float cm = (float)czas/58; czas = 0;
-			if(cm < 4)
-			{
-				...
-			}
-			break;
-		}
-*/
-		TM_KANAL_Init(2);
-		TM_KANAL_Init(4);
+			TM_DISCO_LedToggle(LED_BLUE);
 
-		TM_PWM_Set(2, 255);
-		TM_PWM_Set(4, 255);
+			TM_KANAL_Init(2);
+			TM_KANAL_Init(4);
+
+			TM_PWM_Set(2, 255);
+			TM_PWM_Set(4, 255);
+		}
+		else TM_DISCO_LedOn(LED_ALL);
 
 		break;
 	case 's':
-		GPIO_ToggleBits(GPIOD, GPIO_Pin_13);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_14|GPIO_Pin_15);
+
+		TM_DISCO_LedToggle(LED_ORANGE);
 
 		TM_KANAL_Init(1);
 		TM_KANAL_Init(3);
@@ -337,19 +246,8 @@ void wykonaj(char znak)
 
 		break;
 	case 'a':
-		GPIO_ToggleBits(GPIOD, GPIO_Pin_14);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_13|GPIO_Pin_15);
 
-		TM_KANAL_Init(1);
-		TM_KANAL_Init(4);
-
-		TM_PWM_Set(1, 255);
-		TM_PWM_Set(4, 255);
-
-		break;
-	case 'd':
-		GPIO_ToggleBits(GPIOD, GPIO_Pin_12);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_13|GPIO_Pin_14|GPIO_Pin_15);
+		TM_DISCO_LedToggle(LED_RED);
 
 		TM_KANAL_Init(2);
 		TM_KANAL_Init(3);
@@ -358,7 +256,21 @@ void wykonaj(char znak)
 		TM_PWM_Set(3, 255);
 
 		break;
+	case 'd':
+
+		TM_DISCO_LedToggle(LED_GREEN);
+
+		TM_KANAL_Init(1);
+		TM_KANAL_Init(4);
+
+		TM_PWM_Set(1, 255);
+		TM_PWM_Set(4, 255);
+
+		break;
 	default:
+
+		TM_DISCO_LedOff(LED_ALL);
+
 		TM_KANAL_Ground(1);
 		TM_KANAL_Ground(2);
 		TM_KANAL_Ground(3);
@@ -366,20 +278,25 @@ void wykonaj(char znak)
 
 		break;
 	}
-	/////////////////////////////////////////////////////////////////////////////////////////
 }
-
 
 
 int main(void)
 {
 	SystemInit();
-	TM_TIMER_Init();
-	USRT_Init();
-	GPIOD_Init();
-	DELAY_Init();
 
-	wykonaj('r');
+	/* SILNIKI */
+	TM_TIMER_Init();
+	SYGNAL('R');
+
+	/* BLUETOOTH */
+	USRT_Init();
+
+	/* OPÓNIENIE */
+	TM_DELAY_Init();
+
+	/* DIODY */
+	TM_DISCO_LedInit();
 
 	/*
 	 * [STEROWANIE SILNIKAMI]
@@ -398,19 +315,34 @@ int main(void)
 	 *
 	 * STM USART3 TX PC10 - POD£¥CZONE DO RX HC-05
 	 * STM USART3 RX PC11 - POD£¥CZONE DO TX HC-05
+	 * VCC - POD£¥CZANE POD 5V
+	 * GND - POD£¥CZANE POD GND
+	 *
+	 * [CZUJNIKI ODLEGLOSCIOWE]
+	 *
+	 * PRZOD (SENSOR_W): ECHO -> GPIOD GPIO_Pin_6,  TRIG -> GPIOD GPIO_Pin_5 ( ZASILANIE Z P£YTKI: VCC - 5V, GND - GND )
+	 * TYL   (SENSOR_S): ECHO -> GPIOD GPIO_Pin_14, TRIG -> GPIOD GPIO_Pin_13
+	 * LEWO	 (SENSOR_A): ECHO -> GPIOD GPIO_Pin_12, TRIG -> GPIOD GPIO_Pin_11
+	 * PRAWO (SENSOR_D): ECHO -> GPIOD GPIO_Pin_10, TRIG -> GPIOD GPIO_Pin_9
 	 *
 	 */
 
-	TM_KANAL_Ground(1);
-	TM_KANAL_Ground(2);
-	TM_KANAL_Ground(3);
-	TM_KANAL_Ground(4);
-
-
-
+	/* JESLI KTORYS Z CZUJNIKOW NIE JEST GOTOWY DO DZIALANIA WSZYSTKIE DIODY MRUGAJA */
+	if(!TM_HCSR04_Init(&SENSOR_W, GPIOD, GPIO_PIN_6, GPIOD, GPIO_PIN_5) )/*||
+	   !TM_HCSR04_Init(&SENSOR_S, GPIOD, GPIO_PIN_14, GPIOD, GPIO_PIN_13) ||
+	   !TM_HCSR04_Init(&SENSOR_A, GPIOD, GPIO_PIN_12, GPIOD, GPIO_PIN_11) ||
+	   !TM_HCSR04_Init(&SENSOR_D, GPIOD, GPIO_PIN_10, GPIOD, GPIO_PIN_9)
+	    */
+	{
+		while(1)
+		{
+			TM_DISCO_LedToggle(LED_ALL);
+			Delayms(100);
+		}
+	}
 
 	while(1)
 	{
-
+		// <-- PETLA ZAPEWNIAJACA NIEKONCZACY SIE PROGRAM
 	}
 }
