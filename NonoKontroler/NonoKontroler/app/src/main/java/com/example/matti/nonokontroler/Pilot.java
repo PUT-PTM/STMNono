@@ -19,9 +19,11 @@ import java.io.IOException;
 import java.util.Set;
 import java.util.UUID;
 
-public class Pilot extends AppCompatActivity implements SensorEventListener {
+public class Pilot extends MainActivity implements SensorEventListener {
 
-    /* NIEZBĘDNE DLA TRANSMISJI BLUETOOTH */
+    private Boolean activated;
+
+    /* NIEZBĘDNE DLA TRANSMISJI BLUETOOTH
 
     private final static int REQUEST_ENABLE_BT = 1;
     private BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -30,7 +32,7 @@ public class Pilot extends AppCompatActivity implements SensorEventListener {
     private BluetoothSocket btsocket = null;
     private DataOutputStream outStream = null;
 
-    private boolean wlaczBluetooth(){
+     private boolean wlaczBluetooth(){
 
         boolean stan = true;
 
@@ -93,21 +95,16 @@ public class Pilot extends AppCompatActivity implements SensorEventListener {
             }
         }
         return stan;
-    }
+    }*/
 
     public void backBtn(View v)
     {
-        Button button =(Button) v;
-        startActivity(new Intent(getApplicationContext(), MainActivity.class));
+        setContentView(R.layout.activity_main);
     }
 
-    public void startBtn(View vi)
-    {
-        /* OBSŁUGA AKCELEROMETRU */
-
-        SensorManager SM = (SensorManager) getSystemService(SENSOR_SERVICE);
-        Sensor mySensor = SM.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        SM.registerListener(this, mySensor, SensorManager.SENSOR_DELAY_NORMAL);
+    private void initStartButton() {
+        Button button = (Button) findViewById(R.id.startBtn);
+        button.setOnClickListener(new StartButtonListener(this, button));
     }
 
     @Override
@@ -115,10 +112,14 @@ public class Pilot extends AppCompatActivity implements SensorEventListener {
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.pilot_nono);
+        initStartButton();
+        TextView log = (TextView) findViewById(R.id.log);
+        log.setText("Połączono się z Nono");
+        activated= true;
 
         /* OBSŁUGA BLUETOOTH */
 
-        if (mBluetoothAdapter != null) {
+        /*if (mBluetoothAdapter != null) {
             // Urządzenie wspiera Bluetooth
 
             TextView t = (TextView)findViewById(R.id.log2);
@@ -136,7 +137,7 @@ public class Pilot extends AppCompatActivity implements SensorEventListener {
                     }
                 }
             }
-        }
+        }*/
     }
 
     /* EVENT WYKONUJE SIĘ PRZY KAŻDEJ NAWET NAJMNIEJSZEJ ZMIANIE POŁOŻENIA TELEFONU */
@@ -151,17 +152,21 @@ public class Pilot extends AppCompatActivity implements SensorEventListener {
             // JEŚLI SMARTFON ZOSTANIE PRZECHYLONY W BOK O WIĘCEJ NIŻ 4 JEDNOSTKI - POJAZD ZACZNIE SKRĘCAĆ
             // W PRZECIWNYM WYPADKU JEŚLI SMARTFON ZOSTANIE PRZECHYLONY W OSI OY O 2 JEDNOSTKI - ROZPOCZNIE SIE JEGO JAZDA
             char RUCH = (OX < -4 ? 'd' : (OX > 4 ? 'a' : (OY < -2 ? 'w' : (OY > 2 ? 's' : 'r' ) ) ) );
-
-            outStream.write(RUCH);
-            outStream.flush();
+            if (activated) {
+                outStream.write(RUCH);
+                outStream.flush();
+            }
 
         }catch (Exception ex){
             // ...
         }
+
     }
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
         // nie używane ..
     }
+
+
 }
