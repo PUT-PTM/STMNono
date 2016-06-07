@@ -1,19 +1,53 @@
 # STMNono
 
 ### Overview
-> Projekt dotyczyæ bêdzie zdalnie sterowanego pojazdu. Pojazd ma byæ sterowany za pomoc¹ smartfona.
+> Projekt dotyczyÄ‡ bÄ™dzie zdalnie sterowanego pojazdu. Pojazd ma byÄ‡ sterowany za pomocÄ… smartfona.
 
 ### Description
-> Podstawka u¿yta w pojeŸdzie zostanie wyci¹gniêta ze starego zepsutego zdalnie sterowanego samochodzika. Sterowanie odbywaæ siê bêdzie za pomoc¹ smartfona, a konkretniej zainstalowanej w nim aplikacji wykorzystuj¹cej wbudowany w telefon modu³ bluetooth. Po stronie pojazdu wykorzystany zostanie dwukana³owy modu³ sterowania silnikami DRV8835 , Modu³ Bluetooth Master/Slave HC05 , oraz zarz¹dzaj¹ca nimi p³ytka STM32F407VG. Komunikaty sterowania pojazdem przesy³ane bêd¹ w sposób szeregowy ze smartfona wprost do modu³u bluetooth, a odczytywane przez STM32F407VG dane bêd¹ interpretowane  i w odpowiedni sposób przekierowywane do modu³u sterowania silnikami.
+> Podstawka uÅ¼yta w pojeÅºdzie zostanie wyciÄ…gniÄ™ta ze starego zepsutego zdalnie sterowanego samochodzika. Sterowanie odbywaÄ‡ siÄ™ bÄ™dzie za pomocÄ… smartfona, a konkretniej zainstalowanej w nim aplikacji wykorzystujÄ…cej wbudowany w telefon moduÅ‚ bluetooth. Po stronie pojazdu wykorzystany zostanie dwukanaÅ‚owy moduÅ‚ sterowania silnikami DRV8835 , ModuÅ‚ Bluetooth Master/Slave HC05 , oraz zarzÄ…dzajÄ…ca nimi pÅ‚ytka STM32F407VG. Komunikaty sterowania pojazdem przesyÅ‚ane bÄ™dÄ… w sposÃ³b szeregowy ze smartfona wprost do moduÅ‚u bluetooth, a odczytywane przez STM32F407VG dane bÄ™dÄ… interpretowane  i w odpowiedni sposÃ³b przekierowywane do moduÅ‚u sterowania silnikami.
 
 ### Tools
-> W projekcie zostanie u¿yte œrodowisko Visual Studio , Coocox oraz jêzyki programowania C, Java.
+> W projekcie zostanie uÅ¼yte Å›rodowisko Visual Studio , Coocox oraz jÄ™zyki programowania C, Java.
 
 ### How to run
 > ...
 
 ### How to compile
-> ...
+> Pliki potrzebne do zaÅ‚Ä…czenia:
+-tm_stm32f4_delay.h
+-tm_stm32f4_delay.c
+-tm_stm32f4_disco.h
+-tm_stm32f4_disco.c
+-tm_stm32f4_hcsr04.h
+-tm_stm32f4_hcsr04.c
+
+### How to connect
+>	  [STEROWANIE SILNIKAMI]
+	 
+	  KANAL 1 - PB6 ( KOLO 1 )
+	  KANAL 2 - PB7 ( KOLO 1 )
+	  KANAL 3 - PB8 ( KOLO 2 )
+	  KANAL 4 - PB9 ( KOLO 2 )
+	 
+	  GDY CHCEMY ROZKRECIC KOLA W DANYM KIERUNKU:
+	  PIERW PODLACZAMY DO MASY PIN SILNIKA NA KTORY NIE POWEDRUJE PWM
+	  NASTEPNIE KONFIGURUJEMY PIN SILNIKA NA KTORY POJDZIE SYGNAL PWM
+	  OSTATECZNIE USTAWIAMY WARTOSC PROCENTOWA WYPELNIENIA KANALU DLA PWM
+	 
+	  [OBSÅUGA BLUETOOTH]
+	 
+	  STM USART3 TX PC10 - PODÅÄ„CZONE DO RX HC-05
+	  STM USART3 RX PC11 - PODÅÄ„CZONE DO TX HC-05
+	  VCC - PODÅÄ„CZANE POD 5V
+	  GND - PODÅÄ„CZANE POD GND
+	 
+	  [CZUJNIKI ODLEGLOSCIOWE]
+	 
+	  PRZOD (SENSOR_W): ECHO -> GPIOD GPIO_Pin_6,  TRIG -> GPIOD GPIO_Pin_5 ( ZASILANIE Z PÅYTKI: VCC - 5V, GND - GND )
+	  TYL   (SENSOR_S): ECHO -> GPIOD GPIO_Pin_14, TRIG -> GPIOD GPIO_Pin_13
+	  LEWO	 (SENSOR_A): ECHO -> GPIOD GPIO_Pin_12, TRIG -> GPIOD GPIO_Pin_11
+	  PRAWO (SENSOR_D): ECHO -> GPIOD GPIO_Pin_10, TRIG -> GPIOD GPIO_Pin_9
+	 
 
 ### Future improvements
 > ...
