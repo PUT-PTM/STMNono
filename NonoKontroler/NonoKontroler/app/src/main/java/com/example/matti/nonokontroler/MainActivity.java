@@ -26,14 +26,14 @@ public class MainActivity extends AppCompatActivity {
 
     /* NIEZBĘDNE DLA TRANSMISJI BLUETOOTH */
 
-    private final static int REQUEST_ENABLE_BT = 1;
-    private BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+    public final static int REQUEST_ENABLE_BT = 1;
+    public BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
     UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb");
-    private BluetoothDevice Nono = null;
-    private BluetoothSocket btsocket = null;
-    private DataOutputStream outStream = null;
+    public BluetoothDevice Nono = null;
+    public BluetoothSocket btsocket = null;
+    public DataOutputStream outStream = null;
 
-    private boolean wlaczBluetooth(){
+    public boolean wlaczBluetooth(){
 
         boolean stan = true;
 
@@ -57,7 +57,7 @@ public class MainActivity extends AppCompatActivity {
 
         return stan;
     }
-    private BluetoothDevice znajdzNono(){
+    public BluetoothDevice znajdzNono(){
         Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
         if (pairedDevices.size() > 0) {
             // Znaleziono sparowane urzadzenia
@@ -122,11 +122,6 @@ public class MainActivity extends AppCompatActivity {
                 }
     }
 
-    public void controlBtn(View v)
-    {
-        Button button =(Button) v;
-        startActivity(new Intent(getApplicationContext(), Pilot.class));
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -135,6 +130,16 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
     }
+
+    public void openPilot(View view) {
+        //setContentView(R.layout.pilot_nono);
+        Intent pilot = new Intent (this, Pilot.class);
+        startActivity(pilot);
+    }
+
+    public void onSensorChanged(SensorEvent event){}
+    public void startBtn(View vi)
+    {}
 
     public static class PlaceholderFragment extends Fragment {
 

@@ -1,12 +1,26 @@
-#include "stm32f4xx_conf.h"
-#include "stm32f4xx_rcc.h"
-#include "stm32f4xx_gpio.h"
 #include "stm32f4xx_tim.h"
 #include "stm32f4xx_usart.h"
-#include "stm32f4xx_exti.h"
 #include "misc.h"
 
-int usTime = 0;
+#include "stm32f4xx.h"
+#include "defines.h"
+#include "tm_stm32f4_delay.h"
+#include "tm_stm32f4_disco.h"
+#include "tm_stm32f4_hcsr04.h"
+#include <stdio.h>
+
+#include <time.h>
+#include <stdlib.h>
+
+/* DEKLARACJA CZUJNIKOW ODLEGLOSCIOWYCH */
+TM_HCSR04_t SENSOR_W, SENSOR_S, SENSOR_A, SENSOR_D;
+
+/* FLAGA INFORMUJ¥CA O AKTUALNIE WYKONYWANYM MANEWRZE WYMIJANIA PRZESZKODY - NIE OBS£UGIWANE W TYM CZASIE KOM. BLUETOOTH */
+/* ODLEG£OSCI PRZY JAKICH CZUJNIKI ZAOBSERWUJA PRZESZKODE PRZED/ZA SOBA I PO OBU BOKACH */
+int Wymijanie = 0, cmGD = 20, cmLP = 10;
+
+/* FLAGA MOWIACA O TYM CZY A JESLI TAK TO W KTORA STRONE KRECA SIE KOLA */
+char ruch = ' ';
 
 /* STEROWANIE SILNIKAMI */
 void TM_KANAL_Init(int kanal)
@@ -145,59 +159,6 @@ void TM_KANAL_Ground(int kanal)
 	}
 }
 
-
-/* OPOZNIENIE */
-void DELAY_Init(void)
-{
-    TIM_TimeBaseInitTypeDef TIM_BaseStruct;
-
-    /* POD£¥CZENIE ZEGARA DO TIMERA 3 */
-
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
-
-    /* WYPE£NIENIE STRUKTURY INICJALIZACYJNEJ TIMERA 3 */
-
-    TIM_BaseStruct.TIM_Prescaler = 0;
-    TIM_BaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_BaseStruct.TIM_Period = 83; /* 1MHz - 1us */
-    TIM_BaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
-    TIM_BaseStruct.TIM_RepetitionCounter = 0;
-
-    TIM_TimeBaseInit(TIM3, &TIM_BaseStruct);
-
-    /* W£¥CZENIE TIMERA 3 */
-
-    TIM_Cmd(TIM3, ENABLE);
-
-    /* WLACZAMY PRZERWANIA DLA TIMERA 3 */
-
-    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
-
-    NVIC_InitTypeDef NVIC_InitStructure;
-    NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
-    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
-    TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
-}
-void TIM3_IRQHandler(void)
-{
-	if(TIM_GetITStatus(TIM3, TIM_IT_Update) != RESET)
-	{
-		++usTime;
-		TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
-	}
-}
-void delay(int us)
-{
-	usTime = 0;
-	while(usTime < us);
-}
-
-
 /* OBS£UGA BLUETOOTH */
 void USRT_Init()
 {
@@ -258,128 +219,230 @@ void USART3_IRQHandler(void)
 	if (USART_GetITStatus(USART3, USART_IT_RXNE) == RESET)
 		return;
 
-	wykonaj(USART3->DR);
+	char komunikat = (char) USART3->DR;
+
+	/* OBS£UGUJEMY KOMUNIKAT STEROWANIA TYLKO JESLI NIE WKONUJEMY AKTUALNIE MANEWRU WYPRZEDZANIA */
+	if(Wymijanie == 0 && komunikat != ruch) SYGNAL(komunikat);
+
 	NVIC_ClearPendingIRQ(USART3_IRQn);
 }
 
-/* OBS£UGA DIOD  I PINU SYGNALU CZUJNIKA ODLEGLOSCIOWEGO PRZEDNIEGO */
-void GPIOD_Init()
+void wyminPrawa(int cm, int delay)
 {
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
+	/* USTAWIAMY FLAGÊ INFORMUJ¥CA O AKTUALNIE WYKONYWANYM MANEWRZE WYMIJANIA */
+	Wymijanie = 1;
 
-	GPIO_InitTypeDef DIODY;
-	DIODY.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13| GPIO_Pin_14| GPIO_Pin_15;
-	DIODY.GPIO_Mode = GPIO_Mode_OUT;
-	DIODY.GPIO_PuPd = GPIO_PuPd_NOPULL;
-	DIODY.GPIO_OType = GPIO_OType_PP;
-	DIODY.GPIO_Speed = GPIO_Speed_100MHz;
-	GPIO_Init(GPIOD, &DIODY);
+	int ile = 0, ms = 50;
 
-	GPIO_InitTypeDef TRIG;
-	TRIG.GPIO_Pin = GPIO_Pin_4;
-	TRIG.GPIO_Mode = GPIO_Mode_OUT;
-	TRIG.GPIO_PuPd = GPIO_PuPd_NOPULL;
-	GPIO_Init(GPIOD, &TRIG);
+	/* OBRACAMY POJAZD W PRAWO
+	 *
+	 * [P]
+	 * ==>
+	 *
+	 * */
+	SYGNAL('d');
+	TM_HCSR04_Read(&SENSOR_A);
+	while(SENSOR_A.Distance > cm) {TM_HCSR04_Read(&SENSOR_A); ms += delay; Delayms(delay);}
+	Delayms(50);
+	SYGNAL('r');
 
-	GPIO_InitTypeDef ECHO;
-	ECHO.GPIO_Pin = GPIO_Pin_3;
-	ECHO.GPIO_Mode = GPIO_Mode_IN;
-	ECHO.GPIO_PuPd = GPIO_PuPd_NOPULL;
-	GPIO_Init(GPIOD, &ECHO);
+	/* PORUSZAMY POJAZD DO PRZODU
+	 *
+	 * [P]
+	 *   ==>
+	 *
+	 * */
+	SYGNAL('w');
+	TM_HCSR04_Read(&SENSOR_A);
+	while(SENSOR_A.Distance <= cm) {TM_HCSR04_Read(&SENSOR_A); Delayms(delay);}
+	Delayms(50);
+	SYGNAL('r');
+
+
+	/* OBRACAMY POJAZD W LEWO
+	 *
+	 * [P]
+	 *    ^
+	 *    |
+	 *
+	 * */
+	SYGNAL('a');
+	Delayms(ms);
+	SYGNAL('r');
+
+	/* PORUSZAMY POJAZD DO PRZODU
+	 *
+	 *	  ^
+	 * 	  |
+	 * [P]
+	 *
+	 * */
+	SYGNAL('w');
+	while(1) {TM_HCSR04_Read(&SENSOR_A); if(SENSOR_A.Distance <= cm) ile = 1; else if(ile == 1) break; Delayms(delay);};
+	SYGNAL('r');
+
+	/* USTAWIAMY FLAGÊ INFORMUJ¥CA O ZAKOÑCZONYM MANEWRZE WYMIJANIA */
+	Wymijanie = 0;
+}
+
+void wyminLewa(int cm, int delay)
+{
+	/* USTAWIAMY FLAGÊ INFORMUJ¥CA O AKTUALNIE WYKONYWANYM MANEWRZE WYMIJANIA */
+	Wymijanie = 1;
+
+	int ile = 0, ms = 50;
+
+	/* OBRACAMY POJAZD W LEWO
+	 *
+	 * [P]
+	 * <==
+	 *
+	 * */
+	SYGNAL('a');
+	TM_HCSR04_Read(&SENSOR_D);
+	while(SENSOR_D.Distance > cm) {TM_HCSR04_Read(&SENSOR_D); ms += delay; Delayms(delay);}
+	Delayms(50);
+	SYGNAL('r');
+
+	/* PORUSZAMY POJAZD DO PRZODU
+	 *
+	 *    [P]
+	 * <==
+	 *
+	 * */
+	SYGNAL('w');
+	TM_HCSR04_Read(&SENSOR_D);
+	while(SENSOR_D.Distance <= cm) {TM_HCSR04_Read(&SENSOR_D); Delayms(delay);}
+	Delayms(50);
+	SYGNAL('r');
+
+
+	/* OBRACAMY POJAZD W PRAWO
+	 *
+	 *  [P]
+	 * ^
+	 * |
+	 *
+	 * */
+	SYGNAL('d');
+	Delayms(ms);
+	SYGNAL('r');
+
+	/* PORUSZAMY POJAZD DO PRZODU
+	 *
+	 * ^
+	 * |
+	 *  [P]
+	 *
+	 * */
+	SYGNAL('w');
+	while(1) {TM_HCSR04_Read(&SENSOR_D); if(SENSOR_D.Distance <= cm) ile = 1; else if(ile == 1) break; Delayms(delay);};
+	SYGNAL('r');
+
+	/* USTAWIAMY FLAGÊ INFORMUJ¥CA O ZAKOÑCZONYM MANEWRZE WYMIJANIA */
+	Wymijanie = 0;
 }
 
 /* ODEBRANIE SYGNA£U STEROWANIA */
-void wykonaj(char znak)
+void SYGNAL(char znak)
 {
-	if(znak != 'r') wykonaj('r');
+	if(znak != 'r') SYGNAL('r');
 	switch(znak)
 	{
-	case 'w':
-		GPIO_SetBits(GPIOD, GPIO_Pin_15);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_13|GPIO_Pin_14);
-/*
-		int czas = 0;
-		GPIO_SetBits(GPIOD, GPIO_Pin_4); delay(10);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_4);
+	case 'w': TM_HCSR04_Read(&SENSOR_W);
 
-		while(GPIO_ReadInputDataBit(GPIOD, GPIO_Pin_3) == 1) // <-- PODPIÊTE DO ECHO CZUJNIKA DAJE 1 BEZ WCZENIEJSZEGO WYS£ANIA SYGNA£U
+		if(SENSOR_W.Distance > cmGD)
 		{
-			delay(1);
-			GPIO_ToggleBits(GPIOD, GPIO_Pin_13); delay(1000);
-			czas++;
+			TM_DISCO_LedOff(LED_ALL);
+			TM_DISCO_LedOn(LED_BLUE);
+
+			TM_KANAL_Init(2);
+			TM_KANAL_Init(4);
+
+			TM_PWM_Set(2, 255);
+			TM_PWM_Set(4, 255);
+
+			ruch = 'w';
 		}
-		if(czas > 0)
+
+		break;
+	case 's': TM_HCSR04_Read(&SENSOR_S);
+
+		if(SENSOR_S.Distance > cmGD)
 		{
-			float cm = (float)czas/58; czas = 0;
-			if(cm < 4)
-			{
-				...
-			}
-			break;
+			TM_DISCO_LedOff(LED_ALL);
+			TM_DISCO_LedOn(LED_ORANGE);
+
+			TM_KANAL_Init(1);
+			TM_KANAL_Init(3);
+
+			TM_PWM_Set(1, 255);
+			TM_PWM_Set(3, 255);
+
+			ruch = 's';
 		}
-*/
-		TM_KANAL_Init(2);
-		TM_KANAL_Init(4);
-
-		TM_PWM_Set(2, 255);
-		TM_PWM_Set(4, 255);
 
 		break;
-	case 's':
-		GPIO_ToggleBits(GPIOD, GPIO_Pin_13);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_14|GPIO_Pin_15);
+	case 'a': TM_HCSR04_Read(&SENSOR_A);
 
-		TM_KANAL_Init(1);
-		TM_KANAL_Init(3);
+		if(SENSOR_A.Distance > cmLP)
+		{
+			TM_KANAL_Init(2);
+			TM_KANAL_Init(3);
 
-		TM_PWM_Set(1, 255);
-		TM_PWM_Set(3, 255);
+			TM_PWM_Set(2, 255);
+			TM_PWM_Set(3, 255);
 
-		break;
-	case 'a':
-		GPIO_ToggleBits(GPIOD, GPIO_Pin_14);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_12|GPIO_Pin_13|GPIO_Pin_15);
-
-		TM_KANAL_Init(1);
-		TM_KANAL_Init(4);
-
-		TM_PWM_Set(1, 255);
-		TM_PWM_Set(4, 255);
+			ruch = 'a';
+		}
 
 		break;
-	case 'd':
-		GPIO_ToggleBits(GPIOD, GPIO_Pin_12);
-		GPIO_ResetBits(GPIOD, GPIO_Pin_13|GPIO_Pin_14|GPIO_Pin_15);
+	case 'd': TM_HCSR04_Read(&SENSOR_D);
 
-		TM_KANAL_Init(2);
-		TM_KANAL_Init(3);
+		if(SENSOR_D.Distance > cmLP)
+		{
+			TM_KANAL_Init(1);
+			TM_KANAL_Init(4);
 
-		TM_PWM_Set(2, 255);
-		TM_PWM_Set(3, 255);
+			TM_PWM_Set(1, 255);
+			TM_PWM_Set(4, 255);
+
+			ruch = 'd';
+		}
 
 		break;
 	default:
+
+		TM_DISCO_LedOff(LED_ALL);
+
 		TM_KANAL_Ground(1);
 		TM_KANAL_Ground(2);
 		TM_KANAL_Ground(3);
 		TM_KANAL_Ground(4);
 
+		ruch = 'r';
+
 		break;
 	}
-	/////////////////////////////////////////////////////////////////////////////////////////
 }
-
 
 
 int main(void)
 {
 	SystemInit();
-	TM_TIMER_Init();
-	USRT_Init();
-	GPIOD_Init();
-	DELAY_Init();
 
-	wykonaj('r');
+	/* SILNIKI */
+	TM_TIMER_Init();
+	SYGNAL('r');
+
+	/* BLUETOOTH */
+	USRT_Init();
+
+	/* OPÓNIENIE */
+	TM_DELAY_Init();
+
+	/* DIODY */
+	TM_DISCO_LedInit();
 
 	/*
 	 * [STEROWANIE SILNIKAMI]
@@ -398,19 +461,53 @@ int main(void)
 	 *
 	 * STM USART3 TX PC10 - POD£¥CZONE DO RX HC-05
 	 * STM USART3 RX PC11 - POD£¥CZONE DO TX HC-05
+	 * VCC - POD£¥CZANE POD 5V
+	 * GND - POD£¥CZANE POD GND
+	 *
+	 * [CZUJNIKI ODLEGLOSCIOWE]
+	 *
+	 * PRZOD (SENSOR_W): ECHO -> GPIOD GPIO_Pin_6,  TRIG -> GPIOD GPIO_Pin_5 ( ZASILANIE Z P£YTKI: VCC - 5V, GND - GND )
+	 * TYL   (SENSOR_S): ECHO -> GPIOD GPIO_Pin_14, TRIG -> GPIOD GPIO_Pin_13
+	 * LEWO	 (SENSOR_A): ECHO -> GPIOD GPIO_Pin_12, TRIG -> GPIOD GPIO_Pin_11
+	 * PRAWO (SENSOR_D): ECHO -> GPIOD GPIO_Pin_10, TRIG -> GPIOD GPIO_Pin_9
 	 *
 	 */
 
-	TM_KANAL_Ground(1);
-	TM_KANAL_Ground(2);
-	TM_KANAL_Ground(3);
-	TM_KANAL_Ground(4);
+	/* JESLI KTORYS Z CZUJNIKOW NIE JEST GOTOWY DO DZIALANIA WSZYSTKIE DIODY MRUGAJA */
+	if(!TM_HCSR04_Init(&SENSOR_W, GPIOD, GPIO_PIN_6, GPIOD, GPIO_PIN_5)   ||
+	   !TM_HCSR04_Init(&SENSOR_S, GPIOD, GPIO_PIN_14, GPIOD, GPIO_PIN_13) ||
+	   !TM_HCSR04_Init(&SENSOR_A, GPIOD, GPIO_PIN_12, GPIOD, GPIO_PIN_11) ||
+	   !TM_HCSR04_Init(&SENSOR_D, GPIOD, GPIO_PIN_10, GPIOD, GPIO_PIN_9)
+	   )
+	{
+		while(1)
+		{
+			TM_DISCO_LedToggle(LED_ALL);
+			Delayms(100);
+		}
+	}
 
-
-
-
+	/* W CZASIE RZECZYWISTYM SPRAWDZAMY STANY CZUJNIKOW JESLI TYLKO NIE JESTESMY W TRAKCIE MANEWRU WYMIJANIA */
 	while(1)
 	{
-
+		if(Wymijanie == 0)
+		{
+			switch(ruch)
+			{
+			case 'w':
+				TM_HCSR04_Read(&SENSOR_W); if(SENSOR_W.Distance < cmGD) wyminPrawa(cmGD, 100);
+				break;
+			case 's':
+				TM_HCSR04_Read(&SENSOR_S); if(SENSOR_S.Distance < cmGD) SYGNAL('r');
+				break;
+			case 'a':
+				TM_HCSR04_Read(&SENSOR_A); if(SENSOR_A.Distance < cmLP) SYGNAL('r');
+				break;
+			case 'd':
+				TM_HCSR04_Read(&SENSOR_D); if(SENSOR_D.Distance < cmLP) SYGNAL('r');
+				break;
+			default: break;
+			}
+		}
 	}
 }
