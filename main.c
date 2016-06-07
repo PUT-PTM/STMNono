@@ -3,11 +3,10 @@
 #include "misc.h"
 
 #include "stm32f4xx.h"
-#include "defines.h"
 #include "tm_stm32f4_delay.h"
 #include "tm_stm32f4_disco.h"
 #include "tm_stm32f4_hcsr04.h"
-#include <stdio.h>
+
 
 #include <time.h>
 #include <stdlib.h>
@@ -430,6 +429,7 @@ void SYGNAL(char znak)
 int main(void)
 {
 	SystemInit();
+	srand(time(NULL));
 
 	/* SILNIKI */
 	TM_TIMER_Init();
@@ -495,7 +495,8 @@ int main(void)
 			switch(ruch)
 			{
 			case 'w':
-				TM_HCSR04_Read(&SENSOR_W); if(SENSOR_W.Distance < cmGD) wyminPrawa(cmGD, 100);
+				TM_HCSR04_Read(&SENSOR_W); if(SENSOR_W.Distance < cmGD)
+					if(rand()%2==0) wyminPrawa(cmGD, 100); else wyminLewa(cmGD, 100);
 				break;
 			case 's':
 				TM_HCSR04_Read(&SENSOR_S); if(SENSOR_S.Distance < cmGD) SYGNAL('r');
